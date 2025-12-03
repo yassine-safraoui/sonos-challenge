@@ -109,9 +109,12 @@ impl Serializable for AudioMessage {
                         expected_length: SPEC_MSG_LEN,
                     });
                 }
-                let channels = u16::from_le_bytes(bytes[1..3].try_into().unwrap());
-                let sample_rate = u32::from_le_bytes(bytes[3..7].try_into().unwrap());
-                let bits_per_sample = u16::from_le_bytes(bytes[7..9].try_into().unwrap());
+                let channels =
+                    u16::from_le_bytes(bytes[1..3].try_into().expect("length checked above"));
+                let sample_rate =
+                    u32::from_le_bytes(bytes[3..7].try_into().expect("length checked above"));
+                let bits_per_sample =
+                    u16::from_le_bytes(bytes[7..9].try_into().expect("length checked above"));
                 let sample_format = match bytes[9] {
                     1 => SampleFormat::Float,
                     2 => SampleFormat::Int,
@@ -132,7 +135,8 @@ impl Serializable for AudioMessage {
                         expected_length: 5,
                     });
                 }
-                let length = u32::from_le_bytes(bytes[1..5].try_into().unwrap());
+                let length =
+                    u32::from_le_bytes(bytes[1..5].try_into().expect("length checked above"));
                 let expected_length = SAMPLES_HEADER_LEN + (length as usize) * SAMPLE_SIZE;
                 if bytes.len() != expected_length {
                     return Err(DeserializationError::DataLengthMismatch {
