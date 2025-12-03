@@ -1,15 +1,15 @@
 use hound::{Error, WavSpec};
 
-pub trait AudioSource {
-    fn get_spec(&self) -> Result<WavSpec, Error>;
+pub trait AudioInput {
+    fn get_spec(&self) -> WavSpec;
     fn get_all_samples(&mut self, buf: &mut Vec<i16>) -> Result<(), Error>;
 }
 
-pub struct WavAudioSource {
+pub struct WavAudioInput {
     reader: hound::WavReader<std::io::BufReader<std::fs::File>>,
 }
 
-impl WavAudioSource {
+impl WavAudioInput {
     pub fn init(filepath: &str) -> Result<Self, Error> {
         let reader = hound::WavReader::open(filepath)?;
         Ok(Self { reader })
@@ -19,9 +19,9 @@ impl WavAudioSource {
     }
 }
 
-impl AudioSource for WavAudioSource {
-    fn get_spec(&self) -> Result<WavSpec, Error> {
-        Ok(self.reader.spec())
+impl AudioInput for WavAudioInput {
+    fn get_spec(&self) -> WavSpec {
+        self.reader.spec()
     }
 
     fn get_all_samples(&mut self, buf: &mut Vec<i16>) -> Result<(), Error> {
