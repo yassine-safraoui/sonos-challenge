@@ -22,7 +22,7 @@ file over TCP
 ---
 
 I added the num-traits crate to have an integer type to be used in AudioMessage enum for genericity reasons
-
+Note: I removed it later because I decided to use i16 as the sample type
 ---
 
 I decided to decode the wav file on the server first and then reserialize it into a spec + samples format intentionally,
@@ -43,3 +43,34 @@ I'm aware that I could have streamed the wav file as is to the client and then r
 
 I decided to use i16 as the sample type for the audio samples because it's generally enough for most users. 24 bits and
 32 bits would be overkill and are used only in professional settings.
+
+---
+I added iter_samples to the WavAudioSource enum which returns an iterator over the samples of the audio source, this is
+useful when we don't want to read all the samples at once. It also sets the stage for when I add MicrophoneAudioSource
+which will probably return a stream of samples.
+I will also be using streams for network since they're more suitable for this application. That is because we will be
+sending data to the clients continuously, so it's better to avoid reading all the data at once and do that in a loop.
+
+---
+
+Changed my mind, I'm not touching streams for the server. For this challenge, it's not a big deal if the client blocks
+when waiting for new audio messages, it wouldn't have anything to do if it does not have audio messages anyway.
+
+On the server, I'm creating a listener to accept connections from the client, I'm not handling shutdown of the listener,
+I just move the listener to a new thread and make it accept all incoming connections and i forget about it. The only way
+to stop the listener is to stop the server. For this challenge, this is acceptable.
+
+---
+I just realized a bunch of things, they're relatively a lot, i'll put them in the spec-change-and-jitter.md file.
+Note: the file may be outdated since i changed my mind and decided to have a simple set new client message approach
+instead of doing a callback.
+
+---
+I improved the error handling in tcp by ensuring the thread handling new clients doesn't panic because of mutexes.
+
+---
+I acknowledge that I'm cloning samples_group everytime I want to send it to the clients, this is inefficient. However,
+fixing it would require using two structs AudioMessageOwned and AudioMessageRef or using the Cow type, and I don't want
+to do either. For the sake of simplicity, I'm keeping the cloning approach,
+it only allocates 2KB(1000 * two bytes of i16) of memory each time, and the memory is freed right after so it shouldn't
+be a big deal. 
