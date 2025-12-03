@@ -1,7 +1,6 @@
 use crate::audio::DeserializationError::UnknownWaveSpecSampleFormat;
 use crate::audio::message::LengthError::TooLong;
 use hound::{SampleFormat, WavSpec};
-use num_traits::ToBytes;
 
 #[derive(Debug)]
 pub enum LengthError {
