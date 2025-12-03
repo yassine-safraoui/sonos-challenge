@@ -13,7 +13,7 @@ pub enum DeserializationError {
     IncorrectAudioMessageType {
         kind: u8,
     },
-    DataTooShort {
+    DataLengthMismatch {
         expected_length: usize,
         current_length: usize,
     },
@@ -95,7 +95,7 @@ impl Serializable for AudioMessage {
 
     fn deserialize(bytes: &[u8]) -> Result<Self, DeserializationError> {
         if bytes.is_empty() {
-            return Err(DeserializationError::DataTooShort {
+            return Err(DeserializationError::DataLengthMismatch {
                 current_length: 0,
                 expected_length: 1,
             });
@@ -104,7 +104,7 @@ impl Serializable for AudioMessage {
         match msg_type {
             Ok(AudioMessageType::Spec) => {
                 if bytes.len() != SPEC_MSG_LEN {
-                    return Err(DeserializationError::DataTooShort {
+                    return Err(DeserializationError::DataLengthMismatch {
                         current_length: bytes.len(),
                         expected_length: SPEC_MSG_LEN,
                     });
@@ -127,7 +127,7 @@ impl Serializable for AudioMessage {
             }
             Ok(AudioMessageType::Samples) => {
                 if bytes.len() < SAMPLES_HEADER_LEN {
-                    return Err(DeserializationError::DataTooShort {
+                    return Err(DeserializationError::DataLengthMismatch {
                         current_length: bytes.len(),
                         expected_length: 5,
                     });
@@ -135,7 +135,7 @@ impl Serializable for AudioMessage {
                 let length = u32::from_le_bytes(bytes[1..5].try_into().unwrap());
                 let expected_length = SAMPLES_HEADER_LEN + (length as usize) * SAMPLE_SIZE;
                 if bytes.len() != expected_length {
-                    return Err(DeserializationError::DataTooShort {
+                    return Err(DeserializationError::DataLengthMismatch {
                         current_length: bytes.len(),
                         expected_length,
                     });
