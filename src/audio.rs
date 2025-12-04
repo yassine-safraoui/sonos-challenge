@@ -1,5 +1,7 @@
-pub mod message;
 pub mod input;
+pub mod message;
+mod output;
 
-pub use message::{AudioMessage, DeserializationError, Serializable};
 pub use input::{AudioInput, WavAudioInput};
+pub use message::{AudioMessage, DeserializationError, Serializable};
+pub use output::{SpeakerOutput, WavAudioOutput, WavOutputError};

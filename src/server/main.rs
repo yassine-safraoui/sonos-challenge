@@ -16,7 +16,7 @@ enum AppError {
 }
 impl Application {
     pub fn play_wav_file(&mut self, filepath: &str) -> Result<(), AppError> {
-        const SAMPLES_PER_GROUP: usize = 1000;
+        const SAMPLES_PER_GROUP: usize = 1_000;
         let mut input = match WavAudioInput::init(filepath) {
             Ok(s) => s,
             Err(_) => {
@@ -27,7 +27,7 @@ impl Application {
         let mut serialization_buffer = Vec::new();
 
         let spec = input.get_spec();
-        let wait_time = ((SAMPLES_PER_GROUP * 1_000_000) as f64) / (spec.sample_rate as f64);
+        let wait_time = ((SAMPLES_PER_GROUP * 1_000_000) as f64) * 0.8 / (spec.sample_rate as f64);
 
         match AudioMessage::Spec(spec).serialize(&mut serialization_buffer) {
             Ok(_) => (),
@@ -39,6 +39,10 @@ impl Application {
 
         self.tcp
             .set_new_client_message(serialization_buffer.as_slice());
+        while self.tcp.get_client_count() == 0 {
+            info!("No clients connected, waiting for clients to connect...");
+            sleep(Duration::from_secs(1));
+        }
         match self.tcp.broadcast(&serialization_buffer) {
             Ok(r) => r,
             Err(_) => {
@@ -50,6 +54,7 @@ impl Application {
         serialization_buffer.clear();
         let samples = input.iter_samples();
         let mut sample_group: Vec<i16> = Vec::with_capacity(SAMPLES_PER_GROUP);
+        let mut sent_samples = 0;
         for sample in samples {
             match sample {
                 Ok(s) => {
@@ -68,7 +73,10 @@ impl Application {
                         error!("Couldn't send sample to clients: {}", error);
                         return Err(AppError::Broadcast);
                     }
-                    sleep(Duration::from_micros(wait_time as u64));
+                    sent_samples += sample_group.len();
+                    if sent_samples > spec.sample_rate as usize * 3 {
+                        sleep(Duration::from_micros(wait_time as u64));
+                    }
                     serialization_buffer.clear();
                 }
                 Err(e) => {
@@ -97,9 +105,7 @@ impl Application {
 
 fn main() {
     const FILEPATH: &str = "data/song.wav";
-    env_logger::builder()
-        .filter_level(LevelFilter::Trace)
-        .init();
+    env_logger::builder().filter_level(LevelFilter::Warn).init();
 
     let tcp = match TcpServer::init("localhost:8080") {
         Ok(t) => t,
@@ -108,10 +114,6 @@ fn main() {
             return;
         }
     };
-    while tcp.get_client_count() == 0 {
-        info!("No clients connected, waiting for clients to connect...");
-        sleep(Duration::from_secs(1));
-    }
 
     let mut app = Application { tcp };
     match app.play_wav_file(FILEPATH) {

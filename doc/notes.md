@@ -73,4 +73,12 @@ I acknowledge that I'm cloning samples_group everytime I want to send it to the 
 fixing it would require using two structs AudioMessageOwned and AudioMessageRef or using the Cow type, and I don't want
 to do either. For the sake of simplicity, I'm keeping the cloning approach,
 it only allocates 2KB(1000 * two bytes of i16) of memory each time, and the memory is freed right after so it shouldn't
-be a big deal. 
+be a big deal.
+
+---
+I solved audio playback jitter, it was caused by two issues, I was incorrectly playing a mono source as stereo, and I
+was not handling sleeping on the server well. waiting a wait time linked to the sample rate would make tcp latencies
+cause audio playback issues, multiplying it by 0.8 solves the issue but will make the reception buffer slowly fill over
+time and it will eventually get full. to solve this I first at the start of the server send the first 3 seconds of
+playback and then start sending samples at the normal rate, this way the samples sent first will compensate for any tcp
+latency.

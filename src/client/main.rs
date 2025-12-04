@@ -1,17 +1,121 @@
 use log::{LevelFilter, debug, error, info};
-use sonos_challenge::audio::{AudioMessage, Serializable};
+use sonos_challenge::audio::{AudioMessage, Serializable, SpeakerOutput, WavAudioOutput};
 use sonos_challenge::network::tcp::TcpClient;
-use std::fs::File;
-use std::io::{BufWriter, Result};
+use std::io::Result;
 use std::sync::Arc;
+use std::sync::atomic::Ordering::SeqCst;
 use std::thread::sleep;
 use std::time::Duration;
 
-fn main() {
-    env_logger::builder()
-        .filter_level(LevelFilter::Trace)
-        .init();
+struct Application {
+    tcp_client: TcpClient,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+}
 
+impl Application {
+    fn write_audio_to_file(&mut self, filename: &str) -> Result<()> {
+        let mut buffer = Vec::new();
+        let mut output: Option<WavAudioOutput> = None;
+        // sleep(Duration::from_secs(1));
+        loop {
+            buffer.clear();
+            if self.stop.load(SeqCst) {
+                if let Some(output) = output {
+                    match output.finalize() {
+                        Ok(_) => info!("WAV file finalized successfully"),
+                        Err(e) => error!("Error finalizing WAV file: {}", e),
+                    };
+                }
+                info!("Stopping client");
+                return Ok(());
+            }
+            match self.tcp_client.receive(&mut buffer) {
+                Ok(_) => (),
+                Err(e) => {
+                    error!("Error receiving data from server: {}", e);
+                    return Ok(());
+                }
+            };
+            let audio_message = AudioMessage::deserialize(&buffer);
+            match audio_message {
+                Ok(AudioMessage::Spec(spec)) => {
+                    debug!("Received audio spec: {:?}", spec);
+                    if let Some(output) = output {
+                        match output.finalize() {
+                            Ok(_) => info!("Previous WAV file finalized successfully"),
+                            Err(e) => error!("Error finalizing previous WAV file: {}", e),
+                        }
+                    }
+                    output = Some(
+                        WavAudioOutput::init(filename, spec).expect("Failed to create WAV output"),
+                    );
+                }
+                Ok(AudioMessage::Samples(samples)) => {
+                    debug!("Received {} samples", samples.len());
+                    if let Some(output) = output.as_mut() {
+                        output
+                            .write_samples(samples.as_slice())
+                            .expect("Failed to write samples to WAV file");
+                    }
+                }
+                Err(e) => {
+                    error!("Error deserializing audio message: {:?}", e);
+                }
+            }
+        }
+    }
+    fn play_audio(&mut self) -> Result<()> {
+        let mut buffer = Vec::new();
+        let mut speaker_output: Option<SpeakerOutput> = None;
+        sleep(Duration::from_secs(1));
+        loop {
+            buffer.clear();
+            if self.stop.load(SeqCst) {
+                if let Some(output) = speaker_output {
+                    if let Err(e) = output.pause() {
+                        error!("Error pausing speaker output: {:?}", e);
+                    }
+                }
+                info!("Stopping client");
+                return Ok(());
+            }
+            match self.tcp_client.receive(&mut buffer) {
+                Ok(_) => (),
+                Err(e) => {
+                    error!("Error receiving data from server: {}", e);
+                    return Ok(());
+                }
+            };
+            let audio_message = AudioMessage::deserialize(&buffer);
+            match audio_message {
+                Ok(AudioMessage::Spec(spec)) => {
+                    debug!("Received audio spec: {:?}", spec);
+                    // Set up speaker output with new spec
+                    match SpeakerOutput::init() {
+                        Ok(so) => speaker_output = Some(so),
+                        Err(e) => {
+                            error!("Error initializing speaker output: {:?}", e);
+                            continue;
+                        }
+                    }
+                }
+                Ok(AudioMessage::Samples(samples)) => {
+                    // debug!("Received {} samples", samples.len());
+                    if let Some(output) = speaker_output.as_mut() {
+                        output.push_slice(samples.as_slice());
+                    }
+                }
+                Err(e) => {
+                    error!("Error deserializing audio message: {:?}", e);
+                }
+            }
+        }
+    }
+}
+
+fn main() {
+    env_logger::builder().filter_level(LevelFilter::Warn).init();
+    const FILEPATH: &str = "output.wav";
     let mut tcp: Result<TcpClient>;
     loop {
         tcp = TcpClient::init("localhost:8080");
@@ -22,61 +126,22 @@ fn main() {
         }
         break;
     }
-    let mut tcp = tcp.unwrap();
-    let mut buffer = Vec::new();
-    let mut writer: Option<hound::WavWriter<BufWriter<File>>> = None;
-    use std::sync::atomic::{AtomicBool, Ordering};
-
-    let stop = Arc::new(AtomicBool::new(false));
-    let s = stop.clone();
-    ctrlc::set_handler(move || {
-        debug!("Ctrl-C received, stopping client");
-        s.store(true, Ordering::SeqCst);
-    })
-    .expect("Error setting Ctrl-C handler");
-    sleep(Duration::from_secs(1));
-    loop {
-        buffer.clear();
-        if stop.load(Ordering::SeqCst) {
-            if let Some(writer) = writer {
-                match writer.finalize() {
-                    Ok(_) => info!("WAV file finalized successfully"),
-                    Err(e) => error!("Error finalizing WAV file: {}", e),
-                };
-            }
-            info!("Stopping client");
-            break;
-        }
-        match tcp.receive(&mut buffer) {
-            Ok(_) => (),
-            Err(e) => {
-                error!("Error receiving data from server: {}", e);
-                return;
-            }
-        };
-        let audio_message = AudioMessage::deserialize(&buffer);
-        match audio_message {
-            Ok(AudioMessage::Spec(spec)) => {
-                debug!("Received audio spec: {:?}", spec);
-                if let Some(writer) = writer {
-                    match writer.finalize() {
-                        Ok(_) => info!("Previous WAV file finalized successfully"),
-                        Err(e) => error!("Error finalizing previous WAV file: {}", e),
-                    }
-                }
-                writer = Some(hound::WavWriter::create("output.wav", spec).unwrap());
-            }
-            Ok(AudioMessage::Samples(samples)) => {
-                debug!("Received {} samples", samples.len());
-                if let Some(w) = writer.as_mut() {
-                    for sample in samples {
-                        w.write_sample(sample).unwrap();
-                    }
-                }
-            }
-            Err(e) => {
-                error!("Error deserializing audio message: {:?}", e);
-            }
-        }
+    let tcp = tcp.unwrap();
+    let stop: Arc<std::sync::atomic::AtomicBool> =
+        Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let stop = stop.clone();
+        ctrlc::set_handler(move || {
+            debug!("Ctrl-C received, stopping client");
+            stop.store(true, SeqCst);
+        })
+        .expect("Error setting Ctrl-C handler");
     }
+    let mut app = Application {
+        tcp_client: tcp,
+        stop,
+    };
+    // app.write_audio_to_file(FILEPATH)
+    //     .expect("Failed to write audio to file");
+    app.play_audio().expect("Failed to play audio");
 }
