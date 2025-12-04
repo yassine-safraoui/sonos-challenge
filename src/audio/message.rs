@@ -1,11 +1,22 @@
 use crate::audio::DeserializationError::UnknownWaveSpecSampleFormat;
 use crate::audio::message::LengthError::TooLong;
 use hound::{SampleFormat, WavSpec};
+use std::fmt;
 
 #[derive(Debug)]
 pub enum LengthError {
     TooLong { len: usize },
 }
+
+impl fmt::Display for LengthError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LengthError::TooLong { len } => write!(f, "Data length {} exceeds maximum", len),
+        }
+    }
+}
+
+impl std::error::Error for LengthError {}
 
 #[derive(Debug, PartialEq)]
 pub enum DeserializationError {

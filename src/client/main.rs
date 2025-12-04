@@ -13,6 +13,7 @@ struct Application {
 }
 
 impl Application {
+    #[allow(dead_code)] // Reserved for future CLI implementation
     fn write_audio_to_file(&mut self, filename: &str) -> Result<()> {
         let mut buffer = Vec::new();
         let mut output: Option<WavAudioOutput> = None;
@@ -40,22 +41,26 @@ impl Application {
             match audio_message {
                 Ok(AudioMessage::Spec(spec)) => {
                     debug!("Received audio spec: {:?}", spec);
-                    if let Some(output) = output {
-                        match output.finalize() {
+                    if let Some(prev_output) = output.take() {
+                        match prev_output.finalize() {
                             Ok(_) => info!("Previous WAV file finalized successfully"),
                             Err(e) => error!("Error finalizing previous WAV file: {}", e),
                         }
                     }
-                    output = Some(
-                        WavAudioOutput::init(filename, spec).expect("Failed to create WAV output"),
-                    );
+                    match WavAudioOutput::init(filename, spec) {
+                        Ok(wav_output) => output = Some(wav_output),
+                        Err(e) => {
+                            error!("Failed to create WAV output: {}", e);
+                            continue;
+                        }
+                    }
                 }
                 Ok(AudioMessage::Samples(samples)) => {
                     debug!("Received {} samples", samples.len());
-                    if let Some(output) = output.as_mut() {
-                        output
-                            .write_samples(samples.as_slice())
-                            .expect("Failed to write samples to WAV file");
+                    if let Some(ref mut wav_output) = output
+                        && let Err(e) = wav_output.write_samples(samples.as_slice())
+                    {
+                        error!("Failed to write samples to WAV file: {}", e);
                     }
                 }
                 Err(e) => {
@@ -71,10 +76,10 @@ impl Application {
         loop {
             buffer.clear();
             if self.stop.load(SeqCst) {
-                if let Some(output) = speaker_output {
-                    if let Err(e) = output.pause() {
-                        error!("Error pausing speaker output: {:?}", e);
-                    }
+                if let Some(output) = speaker_output
+                    && let Err(e) = output.pause()
+                {
+                    error!("Error pausing speaker output: {:?}", e);
                 }
                 info!("Stopping client");
                 return Ok(());
@@ -115,6 +120,7 @@ impl Application {
 
 fn main() {
     env_logger::builder().filter_level(LevelFilter::Warn).init();
+    #[allow(dead_code)] // Reserved for future CLI implementation
     const FILEPATH: &str = "output.wav";
     let mut tcp: Result<TcpClient>;
     loop {
