@@ -153,9 +153,6 @@ impl TcpServer {
             data.len(),
             streams.len()
         );
-        // for byte in &data[..data.len().min(10)] {
-        //     debug!("{:02X} ", byte);
-        // }
         Ok(())
     }
 }
