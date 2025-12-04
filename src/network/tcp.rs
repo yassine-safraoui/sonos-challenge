@@ -180,7 +180,7 @@ impl TcpClient {
 
     const MAX_FRAME_SIZE: usize = 16 * 1024 * 1024; // 16 MB
     pub fn receive(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
-        let mut length_bytes = [1u8; 4];
+        let mut length_bytes = [0u8; 4];
         self.stream.read_exact(&mut length_bytes)?;
         debug!("Length bytes: {:02X?}", length_bytes);
         let length = u32::from_le_bytes(length_bytes) as usize;
