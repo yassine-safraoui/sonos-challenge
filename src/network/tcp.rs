@@ -32,6 +32,10 @@ impl TcpServer {
                                     error!("new_client_message mutex poisoned");
                                     poisoned.into_inner()
                                 });
+                        debug!("Sending {} bytes to new client", data.len());
+                        for byte in &data[..data.len().min(10)] {
+                            debug!("{:02X} ", byte);
+                        }
                         let data_len = (data.len() as u32).to_le_bytes();
                         match stream.write_all(data_len.as_slice()) {
                             Ok(_) => (),
@@ -75,6 +79,10 @@ impl TcpServer {
         });
         message.clear();
         message.extend_from_slice(data);
+        debug!("Set new client message of {} bytes", data.len());
+        for byte in &data[..data.len().min(10)] {
+            debug!("{:02X} ", byte);
+        }
     }
 
     pub fn get_client_count(&self) -> usize {
@@ -121,6 +129,9 @@ impl TcpServer {
             data.len(),
             streams.len()
         );
+        // for byte in &data[..data.len().min(10)] {
+        //     debug!("{:02X} ", byte);
+        // }
         Ok(())
     }
 }
@@ -137,8 +148,9 @@ impl TcpClient {
 
     const MAX_FRAME_SIZE: usize = 16 * 1024 * 1024; // 16 MB
     pub fn receive(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
-        let mut length_bytes = [0u8; 4];
+        let mut length_bytes = [1u8; 4];
         self.stream.read_exact(&mut length_bytes)?;
+        debug!("Length bytes: {:02X?}", length_bytes);
         let length = u32::from_le_bytes(length_bytes) as usize;
         debug!("Expecting to receive {} bytes from server", length);
         if length > Self::MAX_FRAME_SIZE {
