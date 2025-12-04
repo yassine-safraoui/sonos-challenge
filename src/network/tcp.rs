@@ -201,3 +201,59 @@ impl TcpClient {
         Ok(length)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use log::LevelFilter;
+    use std::sync::Once;
+    use std::thread::sleep;
+    use std::time::Duration;
+    static INIT: Once = Once::new();
+    fn initialize_logger() {
+        INIT.call_once(|| {
+            env_logger::builder()
+                .filter_level(LevelFilter::Trace)
+                .init()
+        });
+    }
+    #[test]
+    fn broadcast_test() {
+        initialize_logger();
+        let address = "localhost:50104";
+        let mut server = super::TcpServer::init(address).expect("Failed to start TCP server");
+        let mut client =
+            super::TcpClient::init(address).expect("Failed to connect TCP client to server");
+        sleep(Duration::from_millis(100)); // Wait for the server to accept the connection
+        assert_eq!(server.get_client_count(), 1);
+
+        // Test broadcasting data
+        let data = vec![1, 2, 3, 4, 5];
+        server
+            .broadcast(data.as_slice())
+            .expect("Failed to broadcast data");
+        let mut buffer: Vec<u8> = Vec::new();
+        let received_bytes_count = client.receive(&mut buffer).expect("Failed to receive data");
+        assert_eq!(received_bytes_count, data.len());
+        assert_eq!(buffer, data);
+    }
+    #[test]
+    fn new_client_message_test() {
+        initialize_logger();
+        let address = "localhost:50104";
+        let mut server = super::TcpServer::init(address).expect("Failed to start TCP server");
+        let new_client_message = vec![10, 20, 30, 40, 50];
+        server.set_new_client_message(new_client_message.as_slice());
+
+        let mut client =
+            super::TcpClient::init(address).expect("Failed to connect TCP client to server");
+        sleep(Duration::from_millis(100)); // Wait for the server to accept the connection
+
+        // Verify that the new client received the new_client_message
+        let mut buffer: Vec<u8> = Vec::new();
+        let received_bytes_count = client.receive(&mut buffer).expect("Failed to receive data");
+        assert_eq!(received_bytes_count, new_client_message.len());
+        assert_eq!(buffer, new_client_message);
+        // Verify that the server has one connected client after acknowledging the new client message
+        assert_eq!(server.get_client_count(), 1);
+    }
+}
