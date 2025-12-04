@@ -126,10 +126,11 @@ impl TcpServer {
             error!("streams mutex poisoned");
             poisoned.into_inner()
         });
-        let mut clients: Vec<TcpStream> = streams.drain(..).collect();
+        let clients: Vec<TcpStream> = streams.drain(..).collect();
+        drop(streams);
         let mut surviving_streams = Vec::with_capacity(clients.len());
 
-        for mut stream in clients.drain(..) {
+        for mut stream in clients {
             if let Err(e) = stream.write_all(&data_len) {
                 error!("Error sending data length to client: {}", e);
                 continue;
@@ -140,7 +141,10 @@ impl TcpServer {
             }
             surviving_streams.push(stream);
         }
-
+        let mut streams = self.streams.lock().unwrap_or_else(|poisoned| {
+            error!("streams mutex poisoned");
+            poisoned.into_inner()
+        });
         for stream in surviving_streams {
             streams.push_back(stream);
         }
