@@ -65,8 +65,6 @@ pub struct SpeakerOutput {
     _device: Device, // keep alive
     stream: Stream,
     producer: HeapProd<i16>,
-    count: usize,
-    playback_started: bool,
 }
 
 impl SpeakerOutput {
@@ -140,8 +138,6 @@ impl SpeakerOutput {
             _device: device,
             stream,
             producer,
-            count: 0,
-            playback_started: false,
         })
     }
     pub fn push_slice(&mut self, samples: &[i16]) -> usize {
