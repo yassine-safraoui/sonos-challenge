@@ -32,27 +32,25 @@ impl TcpServer {
                                     error!("new_client_message mutex poisoned");
                                     poisoned.into_inner()
                                 });
-                        debug!("Sending {} bytes to new client", data.len());
-                        for byte in &data[..data.len().min(10)] {
-                            debug!("{:02X} ", byte);
+                        if !data.is_empty() {
+                            debug!("Sending {} bytes to new client", data.len());
+                            let data_len = (data.len() as u32).to_le_bytes();
+                            match stream.write_all(data_len.as_slice()) {
+                                Ok(_) => (),
+                                Err(e) => {
+                                    error!("Error: {}", e);
+                                    continue;
+                                }
+                            };
+                            match stream.write_all(data.as_slice()) {
+                                Ok(_) => (),
+                                Err(e) => {
+                                    error!("Error: {}", e);
+                                    continue;
+                                }
+                            };
+                            // the stream is closed on drop, when the variable goes out of scope
                         }
-                        let data_len = (data.len() as u32).to_le_bytes();
-                        match stream.write_all(data_len.as_slice()) {
-                            Ok(_) => (),
-                            Err(e) => {
-                                error!("Error: {}", e);
-                                continue;
-                            }
-                        };
-                        match stream.write_all(data.as_slice()) {
-                            Ok(_) => (),
-                            Err(e) => {
-                                error!("Error: {}", e);
-                                continue;
-                            }
-                        };
-                        // the stream is closed on drop, when the variable goes out of scope
-
                         match streams_for_thread.lock() {
                             Ok(mut streams) => streams.push_front(stream),
                             Err(_) => {
