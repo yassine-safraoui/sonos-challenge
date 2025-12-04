@@ -90,7 +90,7 @@ impl Application {
                     if let Err(error) = AudioMessage::Samples(sample_group.clone())
                         .serialize(&mut serialization_buffer)
                     {
-                        error!("Couldn't serialize sample: {:?}", error);
+                        error!("Couldn't serialize sample: {}", error);
                         return Err(AppError::Serialization);
                     }
                     sample_group.clear();
@@ -114,7 +114,7 @@ impl Application {
             if let Err(e) = AudioMessage::Samples(sample_group.clone())
                 .serialize(&mut serialization_buffer)
             {
-                error!("Couldn't serialize final samples: {:?}", e);
+                error!("Couldn't serialize final samples: {}", e);
                 return Err(AppError::Serialization);
             }
             if let Err(e) = self.tcp.broadcast(&serialization_buffer) {
