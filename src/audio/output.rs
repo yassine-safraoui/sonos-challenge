@@ -23,6 +23,26 @@ pub enum SpeakerOutputError {
     StreamPauseFailed,
 }
 
+impl fmt::Display for SpeakerOutputError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SpeakerOutputError::NoOutputDevice => write!(f, "No output device available"),
+            SpeakerOutputError::DeviceNameUnavailable => write!(f, "Device name unavailable"),
+            SpeakerOutputError::DefaultConfigUnavailable => {
+                write!(f, "Default output config unavailable")
+            }
+            SpeakerOutputError::UnsupportedSampleFormat(fmt) => {
+                write!(f, "Unsupported sample format: {:?}", fmt)
+            }
+            SpeakerOutputError::StreamBuildFailed(msg) => write!(f, "Stream build failed: {}", msg),
+            SpeakerOutputError::StreamPlayFailed => write!(f, "Stream play failed"),
+            SpeakerOutputError::StreamPauseFailed => write!(f, "Stream pause failed"),
+        }
+    }
+}
+
+impl std::error::Error for SpeakerOutputError {}
+
 #[derive(Debug)]
 pub enum WavOutputError {
     HoundError(hound::Error),
@@ -33,6 +53,14 @@ impl fmt::Display for WavOutputError {
         match self {
             WavOutputError::HoundError(e) => write!(f, "Hound error: {}", e),
             WavOutputError::IoError(e) => write!(f, "IO error: {}", e),
+        }
+    }
+}
+impl std::error::Error for WavOutputError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            WavOutputError::HoundError(e) => Some(e),
+            WavOutputError::IoError(e) => Some(e),
         }
     }
 }
@@ -65,8 +93,8 @@ pub struct SpeakerOutput {
     _device: Device, // keep alive
     stream: Stream,
     producer: HeapProd<i16>,
-    count: usize,
-    playback_started: bool,
+    _count: usize,            // reserved for future use
+    _playback_started: bool,  // reserved for future use
 }
 
 impl SpeakerOutput {
@@ -140,8 +168,8 @@ impl SpeakerOutput {
             _device: device,
             stream,
             producer,
-            count: 0,
-            playback_started: false,
+            _count: 0,
+            _playback_started: false,
         })
     }
     pub fn push_slice(&mut self, samples: &[i16]) -> usize {

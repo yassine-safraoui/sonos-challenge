@@ -1,27 +1,52 @@
 use log::{LevelFilter, error, info};
 use sonos_challenge::audio::{AudioInput, AudioMessage, Serializable, WavAudioInput};
 use sonos_challenge::network::tcp::TcpServer;
+use std::fmt;
 use std::thread::sleep;
 use std::time::Duration;
 
 struct Application {
     tcp: TcpServer,
 }
+
 #[derive(Debug)]
 enum AppError {
-    WavFileRead,
-    TcpConnection,
+    WavFileRead(hound::Error),
+    #[allow(dead_code)] // Reserved for future CLI implementation
+    TcpInit(std::io::Error),
     Serialization,
-    Broadcast,
+    Broadcast(std::io::Error),
+}
+
+impl fmt::Display for AppError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AppError::WavFileRead(e) => write!(f, "WAV file read error: {}", e),
+            AppError::TcpInit(e) => write!(f, "TCP initialization error: {}", e),
+            AppError::Serialization => write!(f, "Serialization error"),
+            AppError::Broadcast(e) => write!(f, "Broadcast error: {}", e),
+        }
+    }
+}
+
+impl std::error::Error for AppError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            AppError::WavFileRead(e) => Some(e),
+            AppError::TcpInit(e) => Some(e),
+            AppError::Serialization => None,
+            AppError::Broadcast(e) => Some(e),
+        }
+    }
 }
 impl Application {
     pub fn play_wav_file(&mut self, filepath: &str) -> Result<(), AppError> {
         const SAMPLES_PER_GROUP: usize = 1_000;
         let mut input = match WavAudioInput::init(filepath) {
             Ok(s) => s,
-            Err(_) => {
-                error!("Couldn't read wav file: {}", filepath);
-                return Err(AppError::WavFileRead);
+            Err(e) => {
+                error!("Couldn't read wav file: {}: {}", filepath, e);
+                return Err(AppError::WavFileRead(e));
             }
         };
         let mut serialization_buffer = Vec::new();
@@ -45,9 +70,9 @@ impl Application {
         }
         match self.tcp.broadcast(&serialization_buffer) {
             Ok(r) => r,
-            Err(_) => {
-                error!("Couldn't send wav spec to clients");
-                return Err(AppError::Broadcast);
+            Err(e) => {
+                error!("Couldn't send wav spec to clients: {}", e);
+                return Err(AppError::Broadcast(e));
             }
         };
 
@@ -71,7 +96,7 @@ impl Application {
                     sample_group.clear();
                     if let Err(error) = self.tcp.broadcast(&serialization_buffer) {
                         error!("Couldn't send sample to clients: {}", error);
-                        return Err(AppError::Broadcast);
+                        return Err(AppError::Broadcast(error));
                     }
                     sent_samples += sample_group.len();
                     if sent_samples > spec.sample_rate as usize * 3 {
@@ -81,21 +106,20 @@ impl Application {
                 }
                 Err(e) => {
                     error!("Error reading sample: {}", e);
-                    return Err(AppError::WavFileRead);
+                    return Err(AppError::WavFileRead(e));
                 }
             }
         }
         if !sample_group.is_empty() {
-            if AudioMessage::Samples(sample_group.clone())
+            if let Err(e) = AudioMessage::Samples(sample_group.clone())
                 .serialize(&mut serialization_buffer)
-                .is_err()
             {
-                error!("Couldn't serialize final samples");
+                error!("Couldn't serialize final samples: {:?}", e);
                 return Err(AppError::Serialization);
             }
-            if self.tcp.broadcast(&serialization_buffer).is_err() {
-                error!("Couldn't send final samples to client");
-                return Err(AppError::Broadcast);
+            if let Err(e) = self.tcp.broadcast(&serialization_buffer) {
+                error!("Couldn't send final samples to client: {}", e);
+                return Err(AppError::Broadcast(e));
             }
             serialization_buffer.clear();
         }
@@ -109,8 +133,8 @@ fn main() {
 
     let tcp = match TcpServer::init("localhost:8080") {
         Ok(t) => t,
-        Err(_) => {
-            error!("Couldn't connect to server at localhost:8080");
+        Err(e) => {
+            error!("Couldn't bind to localhost:8080: {}", e);
             return;
         }
     };
@@ -118,7 +142,7 @@ fn main() {
     let mut app = Application { tcp };
     match app.play_wav_file(FILEPATH) {
         Ok(_) => info!("Finished playing WAV file"),
-        Err(e) => error!("{:?}", e),
+        Err(e) => error!("{}", e),
     }
 
     loop {
