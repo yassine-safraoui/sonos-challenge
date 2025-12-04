@@ -2,25 +2,39 @@ use log::{debug, error, info};
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use std::{io, thread};
 
 pub struct TcpServer {
     streams: Arc<Mutex<VecDeque<TcpStream>>>,
     new_client_message: Arc<Mutex<Vec<u8>>>,
+    handle: Option<thread::JoinHandle<()>>,
+    shutdown: Arc<AtomicBool>,
 }
 
 impl TcpServer {
     pub fn init(address: &str) -> io::Result<Self> {
         let listener = TcpListener::bind(address)?;
+        listener.set_nonblocking(true)?;
+
         let streams = Arc::new(Mutex::new(VecDeque::new()));
         let streams_for_thread = Arc::clone(&streams);
+
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let shutdown_for_thread = Arc::clone(&shutdown);
+
         let new_client_message = Arc::new(Mutex::new(Vec::new()));
         let new_client_message_for_thread = Arc::clone(&new_client_message);
-        thread::spawn(move || {
-            for stream in listener.incoming() {
-                match stream {
-                    Ok(mut stream) => {
+        let handle = thread::spawn(move || {
+            loop {
+                if shutdown_for_thread.load(Ordering::Relaxed) {
+                    info!("Shutting down TCP server listener thread");
+                    break;
+                }
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
                         match stream.peer_addr() {
                             Ok(addr) => info!("Accepted connection from {}", addr),
                             Err(e) => error!("Could not get peer address: {}", e),
@@ -58,8 +72,14 @@ impl TcpServer {
                             }
                         }
                     }
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        // no pending connection; give up the CPU a bit
+                        thread::sleep(Duration::from_millis(50));
+                        continue;
+                    }
                     Err(e) => {
-                        eprintln!("Error: {}", e);
+                        error!("Could not accept connection: {}", e);
+                        continue;
                     }
                 }
             }
@@ -67,6 +87,8 @@ impl TcpServer {
         Ok(TcpServer {
             streams,
             new_client_message,
+            handle: Some(handle),
+            shutdown,
         })
     }
 
@@ -131,6 +153,17 @@ impl TcpServer {
         //     debug!("{:02X} ", byte);
         // }
         Ok(())
+    }
+}
+
+impl Drop for TcpServer {
+    fn drop(&mut self) {
+        self.shutdown.store(true, Ordering::Relaxed);
+        if let Some(handle) = self.handle.take()
+            && let Err(e) = handle.join()
+        {
+            error!("TCP listener thread panicked: {:?}", e);
+        }
     }
 }
 
