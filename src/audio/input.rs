@@ -1,3 +1,4 @@
+use std::fs::File;
 use hound::{Error, WavSpec};
 
 pub trait AudioInput {
@@ -6,7 +7,7 @@ pub trait AudioInput {
 }
 
 pub struct WavAudioInput {
-    reader: hound::WavReader<std::io::BufReader<std::fs::File>>,
+    reader: hound::WavReader<std::io::BufReader<File>>,
 }
 
 impl WavAudioInput {
