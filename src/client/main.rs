@@ -56,7 +56,7 @@ impl Application {
                     debug!("Received {} samples", samples.len());
                     if let Some(output) = output.as_mut() {
                         output
-                            .write_samples(samples.as_slice())
+                            .write_samples(&samples)
                             .expect("Failed to write samples to WAV file");
                     }
                 }
@@ -104,7 +104,7 @@ impl Application {
                 }
                 Ok(AudioMessage::Samples(samples)) => {
                     if let Some(output) = speaker_output.as_mut() {
-                        output.play_samples(samples.as_slice());
+                        output.play_samples(&samples);
                     }
                 }
                 Err(e) => {

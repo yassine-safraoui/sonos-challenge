@@ -49,14 +49,14 @@ impl TcpServer {
                         if !data.is_empty() {
                             debug!("Sending {} bytes to new client", data.len());
                             let data_len = (data.len() as u32).to_le_bytes();
-                            match stream.write_all(data_len.as_slice()) {
+                            match stream.write_all(&data_len) {
                                 Ok(_) => (),
                                 Err(e) => {
                                     error!("Error: {}", e);
                                     continue;
                                 }
                             };
-                            match stream.write_all(data.as_slice()) {
+                            match stream.write_all(&data) {
                                 Ok(_) => (),
                                 Err(e) => {
                                     error!("Error: {}", e);
@@ -229,7 +229,7 @@ mod tests {
         // Test broadcasting data
         let data = vec![1, 2, 3, 4, 5];
         server
-            .broadcast(data.as_slice())
+            .broadcast(&data)
             .expect("Failed to broadcast data");
         let mut buffer: Vec<u8> = Vec::new();
         let received_bytes_count = client.receive(&mut buffer).expect("Failed to receive data");
@@ -242,7 +242,7 @@ mod tests {
         let address = "localhost:50104";
         let mut server = super::TcpServer::bind(address).expect("Failed to start TCP server");
         let new_client_message = vec![10, 20, 30, 40, 50];
-        server.set_new_client_message(new_client_message.as_slice());
+        server.set_new_client_message(&new_client_message);
 
         let mut client =
             super::TcpClient::connect(address).expect("Failed to connect TCP client to server");

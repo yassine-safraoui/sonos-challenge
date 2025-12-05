@@ -75,7 +75,7 @@ impl Serializable for AudioMessage {
                 buf.reserve(SAMPLES_HEADER_LEN + samples.len() * SAMPLE_SIZE);
                 buf.push(AudioMessageType::Samples as u8);
                 let len = (samples.len() as u32).to_le_bytes();
-                buf.extend_from_slice(len.as_slice());
+                buf.extend_from_slice(&len);
                 buf.extend(samples.iter().flat_map(|s| s.to_le_bytes()));
 
                 // Implementation choice: using slice to copy the data via a memory copy instead of iterating through

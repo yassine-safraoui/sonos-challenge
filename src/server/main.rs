@@ -36,8 +36,7 @@ impl Application {
             }
         };
 
-        self.tcp
-            .set_new_client_message(serialization_buffer.as_slice());
+        self.tcp.set_new_client_message(&serialization_buffer);
         while self.tcp.get_client_count() == 0 {
             info!("No clients connected, waiting for clients to connect...");
             sleep(Duration::from_secs(1));
