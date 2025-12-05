@@ -27,7 +27,7 @@ impl Application {
         let mut serialization_buffer = Vec::new();
 
         let spec = input.get_spec();
-        let wait_time = ((SAMPLES_PER_GROUP * 1_000_000) as f64) * 0.8 / (spec.sample_rate as f64);
+        let wait_time = ((SAMPLES_PER_GROUP * 1_000_000) as f64) / (spec.sample_rate as f64);
 
         match AudioMessage::Spec(spec).serialize(&mut serialization_buffer) {
             Ok(_) => (),
