@@ -10,7 +10,6 @@ struct Application {
 #[derive(Debug)]
 enum AppError {
     WavFileRead,
-    TcpConnection,
     Serialization,
     Broadcast,
 }
