@@ -106,7 +106,7 @@ fn main() {
     const FILEPATH: &str = "data/song.wav";
     env_logger::builder().filter_level(LevelFilter::Warn).init();
 
-    let tcp = match TcpServer::init("localhost:8080") {
+    let tcp = match TcpServer::bind("localhost:8080") {
         Ok(t) => t,
         Err(_) => {
             error!("Couldn't connect to server at localhost:8080");

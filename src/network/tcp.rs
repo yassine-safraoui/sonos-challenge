@@ -15,7 +15,7 @@ pub struct TcpServer {
 }
 
 impl TcpServer {
-    pub fn init(address: &str) -> io::Result<Self> {
+    pub fn bind(address: &str) -> io::Result<Self> {
         let listener = TcpListener::bind(address)?;
         listener.set_nonblocking(true)?;
 
@@ -173,7 +173,7 @@ pub struct TcpClient {
 }
 
 impl TcpClient {
-    pub fn init(address: &str) -> io::Result<Self> {
+    pub fn connect(address: &str) -> io::Result<Self> {
         let stream = TcpStream::connect(address)?;
         Ok(TcpClient { stream })
     }
@@ -220,9 +220,9 @@ mod tests {
     fn broadcast_test() {
         initialize_logger();
         let address = "localhost:50104";
-        let mut server = super::TcpServer::init(address).expect("Failed to start TCP server");
+        let mut server = super::TcpServer::bind(address).expect("Failed to start TCP server");
         let mut client =
-            super::TcpClient::init(address).expect("Failed to connect TCP client to server");
+            super::TcpClient::connect(address).expect("Failed to connect TCP client to server");
         sleep(Duration::from_millis(100)); // Wait for the server to accept the connection
         assert_eq!(server.get_client_count(), 1);
 
@@ -240,12 +240,12 @@ mod tests {
     fn new_client_message_test() {
         initialize_logger();
         let address = "localhost:50104";
-        let mut server = super::TcpServer::init(address).expect("Failed to start TCP server");
+        let mut server = super::TcpServer::bind(address).expect("Failed to start TCP server");
         let new_client_message = vec![10, 20, 30, 40, 50];
         server.set_new_client_message(new_client_message.as_slice());
 
         let mut client =
-            super::TcpClient::init(address).expect("Failed to connect TCP client to server");
+            super::TcpClient::connect(address).expect("Failed to connect TCP client to server");
         sleep(Duration::from_millis(100)); // Wait for the server to accept the connection
 
         // Verify that the new client received the new_client_message
