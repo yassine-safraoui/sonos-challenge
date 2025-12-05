@@ -67,12 +67,12 @@ impl Application {
                         error!("Couldn't serialize sample: {:?}", error);
                         return Err(AppError::Serialization);
                     }
-                    sample_group.clear();
                     if let Err(error) = self.tcp.broadcast(&serialization_buffer) {
                         error!("Couldn't send sample to clients: {}", error);
                         return Err(AppError::Broadcast);
                     }
                     sent_samples += sample_group.len();
+                    sample_group.clear();
                     if sent_samples > spec.sample_rate as usize * 3 {
                         sleep(Duration::from_micros(wait_time as u64));
                     }
