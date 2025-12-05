@@ -1,5 +1,7 @@
 use log::{LevelFilter, debug, error, info};
-use sonos_challenge::audio::{AudioMessage, Serializable, SpeakerOutput, WavAudioOutput};
+use sonos_challenge::audio::{
+    AudioMessage, Serializable, SpeakerOutput, SpeakerOutputBuilder, WavAudioOutput,
+};
 use sonos_challenge::network::tcp::TcpClient;
 use std::io::Result;
 use std::sync::Arc;
@@ -47,7 +49,7 @@ impl Application {
                         }
                     }
                     output = Some(
-                        WavAudioOutput::init(filename, spec).expect("Failed to create WAV output"),
+                        WavAudioOutput::new(filename, spec).expect("Failed to create WAV output"),
                     );
                 }
                 Ok(AudioMessage::Samples(samples)) => {
@@ -71,10 +73,10 @@ impl Application {
         loop {
             buffer.clear();
             if self.stop.load(SeqCst) {
-                if let Some(output) = speaker_output {
-                    if let Err(e) = output.pause() {
-                        error!("Error pausing speaker output: {:?}", e);
-                    }
+                if let Some(output) = speaker_output
+                    && let Err(e) = output.pause()
+                {
+                    error!("Error pausing speaker output: {:?}", e);
                 }
                 info!("Stopping client");
                 return Ok(());
@@ -90,8 +92,9 @@ impl Application {
             match audio_message {
                 Ok(AudioMessage::Spec(spec)) => {
                     debug!("Received audio spec: {:?}", spec);
-                    // Set up speaker output with new spec
-                    match SpeakerOutput::init() {
+                    let mut speaker_builder = SpeakerOutputBuilder::new();
+
+                    match speaker_builder.build() {
                         Ok(so) => speaker_output = Some(so),
                         Err(e) => {
                             error!("Error initializing speaker output: {:?}", e);
@@ -100,9 +103,8 @@ impl Application {
                     }
                 }
                 Ok(AudioMessage::Samples(samples)) => {
-                    // debug!("Received {} samples", samples.len());
                     if let Some(output) = speaker_output.as_mut() {
-                        output.push_slice(samples.as_slice());
+                        output.play_samples(samples.as_slice());
                     }
                 }
                 Err(e) => {
@@ -118,7 +120,7 @@ fn main() {
     const FILEPATH: &str = "output.wav";
     let mut tcp: Result<TcpClient>;
     loop {
-        tcp = TcpClient::init("localhost:8080");
+        tcp = TcpClient::connect("localhost:8080");
         if tcp.is_err() {
             info!("Couldn't connect to server at localhost:8080");
             sleep(Duration::from_secs(1));

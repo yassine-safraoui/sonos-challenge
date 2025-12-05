@@ -4,4 +4,4 @@ mod output;
 
 pub use input::{AudioInput, WavAudioInput};
 pub use message::{AudioMessage, DeserializationError, Serializable};
-pub use output::{SpeakerOutput, WavAudioOutput, WavOutputError};
+pub use output::{SpeakerOutput, SpeakerOutputBuilder, WavAudioOutput, WavOutputError};

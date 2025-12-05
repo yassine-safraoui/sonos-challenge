@@ -1,7 +1,10 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{Device, Host, OutputCallbackInfo, Sample, SampleFormat, Stream, StreamConfig};
+use cpal::{
+    BuildStreamError, DefaultStreamConfigError, Device, DeviceNameError, Host, OutputCallbackInfo,
+    PauseStreamError, PlayStreamError, Sample, SampleFormat, Stream, StreamConfig,
+};
 use hound::WavSpec;
-use log::{debug, warn};
+use log::{debug, error, warn};
 use ringbuf::traits::{Consumer, Observer, Producer, Split};
 use ringbuf::{HeapCons, HeapProd, HeapRb};
 use std::fmt;
@@ -15,12 +18,13 @@ pub struct WavAudioOutput {
 #[derive(Debug)]
 pub enum SpeakerOutputError {
     NoOutputDevice,
-    DeviceNameUnavailable,
-    DefaultConfigUnavailable,
+    DeviceNotFound(String),
+    DeviceNameUnavailable(DeviceNameError),
+    DefaultConfigUnavailable(DefaultStreamConfigError),
     UnsupportedSampleFormat(SampleFormat),
-    StreamBuildFailed(String),
-    StreamPlayFailed,
-    StreamPauseFailed,
+    StreamBuildFailed(BuildStreamError),
+    StreamPlayFailed(PlayStreamError),
+    StreamPauseFailed(PauseStreamError),
 }
 
 #[derive(Debug)]
@@ -38,59 +42,98 @@ impl fmt::Display for WavOutputError {
 }
 
 impl WavAudioOutput {
-    pub fn init(filepath: &str, spec: WavSpec) -> Result<Self, WavOutputError> {
+    pub fn new(filepath: &str, spec: WavSpec) -> Result<Self, WavOutputError> {
         match hound::WavWriter::create(filepath, spec) {
             Ok(w) => Ok(WavAudioOutput { writer: w }),
             Err(e) => Err(WavOutputError::HoundError(e)),
         }
     }
     pub fn write_samples(&mut self, samples: &[i16]) -> Result<(), WavOutputError> {
-        for &sample in samples {
-            if let Err(e) = self.writer.write_sample(sample) {
-                return Err(WavOutputError::HoundError(e));
-            }
-        }
-        Ok(())
+        samples.iter().try_for_each(|&s| {
+            self.writer
+                .write_sample(s)
+                .map_err(WavOutputError::HoundError)
+        })
     }
     pub fn finalize(self) -> Result<(), WavOutputError> {
-        match self.writer.finalize() {
-            Ok(_) => Ok(()),
-            Err(e) => Err(WavOutputError::HoundError(e)),
-        }
+        self.writer.finalize().map_err(WavOutputError::HoundError)
     }
 }
 
-pub struct SpeakerOutput {
-    _host: Host,     // keep alive
-    _device: Device, // keep alive
-    stream: Stream,
-    producer: HeapProd<i16>,
+pub struct SpeakerOutputBuilder {
+    host: Host,
+    device_name: Option<String>,
+}
+impl Default for SpeakerOutputBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
-impl SpeakerOutput {
-    pub fn init() -> Result<Self, SpeakerOutputError> {
-        let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .ok_or(SpeakerOutputError::NoOutputDevice)?;
-        match device.name() {
-            Ok(name) => debug!("Using output device: {}", name),
-            Err(_) => return Err(SpeakerOutputError::DeviceNameUnavailable),
+impl SpeakerOutputBuilder {
+    pub fn new() -> Self {
+        SpeakerOutputBuilder {
+            host: cpal::default_host(),
+            device_name: None,
         }
+    }
+    pub fn list_output_devices(&self) -> Vec<String> {
+        let mut device_names = Vec::new();
+        match self.host.output_devices() {
+            Ok(devices) => {
+                for (index, device) in devices.enumerate() {
+                    match device.name() {
+                        Ok(name) => device_names.push(name),
+                        Err(e) => {
+                            warn!("Could not get device name: {}", e);
+                            device_names.push(format!("Unknown Device {}", index));
+                        }
+                    }
+                }
+            }
+            Err(e) => warn!("Could not get output devices: {}", e),
+        }
+        device_names
+    }
+    pub fn with_output_device(&mut self, name: &str) -> &Self {
+        self.device_name = Some(name.to_string());
+        self
+    }
+    pub fn build(&mut self) -> Result<SpeakerOutput, SpeakerOutputError> {
+        let device = match self.device_name.as_deref() {
+            None => self
+                .host
+                .default_output_device()
+                .ok_or(SpeakerOutputError::NoOutputDevice)?,
+            Some(target_name) => {
+                let devices = self.host.output_devices().map_err(|e| {
+                    warn!("Could not get output devices: {}", e);
+                    SpeakerOutputError::NoOutputDevice
+                })?;
+
+                let device = devices.enumerate().find_map(|(index, d)| match d.name() {
+                    Ok(n) if n == target_name => Some(d),
+                    Err(_) if format!("Unknown Device {}", index) == target_name => Some(d),
+                    _ => None,
+                });
+
+                device.ok_or_else(|| SpeakerOutputError::DeviceNotFound(target_name.to_string()))?
+            }
+        };
         let supported_config = device
             .default_output_config()
-            .map_err(|_| SpeakerOutputError::DefaultConfigUnavailable)?;
+            .map_err(SpeakerOutputError::DefaultConfigUnavailable)?;
         let sample_format = supported_config.sample_format();
         debug!("Default supported output config: {:?}", supported_config);
         debug!("Sample format: {:?}", sample_format);
         let config: StreamConfig = supported_config.into();
         debug!("Default output config: {:?}", config);
 
-        // 10 second buffer at 44.1k mono
+        // 10-second buffer at 44.1k mono
         let rb = HeapRb::<i16>::new(44100 * 2 * 10);
-        let (producer, consumer) = rb.split(); // NO locks needed
+        let (producer, consumer) = rb.split();
 
-        let err_fn = |err| eprintln!("Stream error: {}", err);
+        let err_fn = |err| error!("Stream error: {}", err);
 
         // Build stream using a single fill function
         let stream = match sample_format {
@@ -103,7 +146,7 @@ impl SpeakerOutput {
                         err_fn,
                         None,
                     )
-                    .map_err(|e| SpeakerOutputError::StreamBuildFailed(e.to_string()))?
+                    .map_err(SpeakerOutputError::StreamBuildFailed)?
             }
             SampleFormat::I16 => {
                 let mut cons = consumer;
@@ -114,7 +157,7 @@ impl SpeakerOutput {
                         err_fn,
                         None,
                     )
-                    .map_err(|e| SpeakerOutputError::StreamBuildFailed(e.to_string()))?
+                    .map_err(SpeakerOutputError::StreamBuildFailed)?
             }
             SampleFormat::U16 => {
                 let mut cons = consumer;
@@ -125,22 +168,24 @@ impl SpeakerOutput {
                         err_fn,
                         None,
                     )
-                    .map_err(|e| SpeakerOutputError::StreamBuildFailed(e.to_string()))?
+                    .map_err(SpeakerOutputError::StreamBuildFailed)?
             }
             other => return Err(SpeakerOutputError::UnsupportedSampleFormat(other)),
         };
         stream
             .play()
-            .map_err(|_| SpeakerOutputError::StreamPlayFailed)?;
+            .map_err(SpeakerOutputError::StreamPlayFailed)?;
 
-        Ok(SpeakerOutput {
-            _host: host,
-            _device: device,
-            stream,
-            producer,
-        })
+        Ok(SpeakerOutput { stream, producer })
     }
-    pub fn push_slice(&mut self, samples: &[i16]) -> usize {
+}
+pub struct SpeakerOutput {
+    stream: Stream,
+    producer: HeapProd<i16>,
+}
+
+impl SpeakerOutput {
+    pub fn play_samples(&mut self, samples: &[i16]) -> usize {
         while self.producer.vacant_len() < samples.len() {}
         let pushed_count = self.producer.push_slice(samples);
         if pushed_count < samples.len() {
@@ -151,7 +196,7 @@ impl SpeakerOutput {
         }
         pushed_count
     }
-    pub fn push(&mut self, sample: i16) -> Result<(), i16> {
+    pub fn play_sample(&mut self, sample: i16) -> Result<(), i16> {
         while self.producer.is_full() {}
         match self.producer.try_push(sample) {
             Ok(_) => Ok(()),
@@ -161,12 +206,12 @@ impl SpeakerOutput {
     pub fn pause(&self) -> Result<(), SpeakerOutputError> {
         self.stream
             .pause()
-            .map_err(|_| SpeakerOutputError::StreamPauseFailed)
+            .map_err(SpeakerOutputError::StreamPauseFailed)
     }
     pub fn start(&self) -> Result<(), SpeakerOutputError> {
         self.stream
             .play()
-            .map_err(|_| SpeakerOutputError::StreamPlayFailed)
+            .map_err(SpeakerOutputError::StreamPlayFailed)
     }
 }
 
