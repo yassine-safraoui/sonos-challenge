@@ -1,6 +1,6 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{
-    BuildStreamError, DefaultStreamConfigError, Device, DeviceNameError, Host, OutputCallbackInfo,
+    BuildStreamError, DefaultStreamConfigError, DeviceNameError, Host, OutputCallbackInfo,
     PauseStreamError, PlayStreamError, Sample, SampleFormat, Stream, StreamConfig,
 };
 use hound::WavSpec;
