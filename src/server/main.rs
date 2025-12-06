@@ -58,8 +58,8 @@ impl Application {
         for sample in samples {
             match sample {
                 Ok(s) => {
+                    sample_group.push(s);
                     if sample_group.len() < SAMPLES_PER_GROUP {
-                        sample_group.push(s);
                         continue;
                     }
                     self.play_samples_group(&sample_group)?;
