@@ -28,7 +28,16 @@ impl Application {
         let mut serialization_buffer = Vec::new();
 
         let spec = input.get_spec();
-        let wait_time = ((SAMPLES_PER_GROUP * 1_000_000) as f64) / (spec.sample_rate as f64);
+        /// Fraction of real‑time used to pace sending, leaving headroom for
+        /// network and processing latency.
+        const PLAYBACK_PACING_FACTOR: f64 = 0.8;
+        /// Amount of audio (in seconds) to preload before pacing
+        /// to build up a latency buffer on the client.
+        const INITIAL_BUFFER_SECONDS: usize = 3;
+
+        let wait_time_micros = ((SAMPLES_PER_GROUP * 1_000_000) as f64) * PLAYBACK_PACING_FACTOR
+            / (spec.sample_rate as f64);
+        // We multiply by 0.8 to account for network latency and processing time
 
         match AudioMessage::Spec(spec).serialize(&mut serialization_buffer) {
             Ok(_) => (),
@@ -65,8 +74,8 @@ impl Application {
                     self.play_samples_group(&sample_group)?;
                     sent_samples += sample_group.len();
                     sample_group.clear();
-                    if sent_samples > spec.sample_rate as usize * 3 {
-                        sleep(Duration::from_micros(wait_time as u64));
+                    if sent_samples > spec.sample_rate as usize * INITIAL_BUFFER_SECONDS {
+                        sleep(Duration::from_micros(wait_time_micros as u64));
                     }
                 }
                 Err(e) => {
