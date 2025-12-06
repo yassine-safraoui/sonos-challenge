@@ -22,8 +22,13 @@ enum ReceiveOutcome {
     Data,
     ServerDisconnected,
 }
+#[derive(Debug)]
+enum ApplicationError {
+    TcpClientError,
+    WavAudioOutputError,
+}
 impl Application {
-    fn receive(&mut self, buffer: &mut Vec<u8>) -> Result<ReceiveOutcome, TcpClientError> {
+    fn receive(&mut self, buffer: &mut Vec<u8>) -> Result<ReceiveOutcome, ApplicationError> {
         match self.tcp_client.receive(buffer) {
             Ok(_) => Ok(ReceiveOutcome::Data),
             Err(TcpClientError::ServerDisconnected(_)) => {
@@ -32,14 +37,13 @@ impl Application {
             }
             Err(error) => {
                 error!("Error receiving data from server: {:?}", error);
-                Err(error)
+                Err(ApplicationError::TcpClientError)
             }
         }
     }
-    fn write_audio_to_file(&mut self, filename: &str) -> Result<(), TcpClientError> {
+    fn write_audio_to_file(&mut self, filename: &str) -> Result<(), ApplicationError> {
         let mut buffer = Vec::new();
         let mut output: Option<WavAudioOutput> = None;
-        // sleep(Duration::from_secs(1));
         loop {
             buffer.clear();
             if self.stop.load(SeqCst) {
@@ -65,16 +69,21 @@ impl Application {
                             Err(e) => error!("Error finalizing previous WAV file: {}", e),
                         }
                     }
-                    output = Some(
-                        WavAudioOutput::new(filename, spec).expect("Failed to create WAV output"),
-                    );
+                    output = match WavAudioOutput::new(filename, spec) {
+                        Ok(result) => Some(result),
+                        Err(e) => {
+                            error!("Failed to create WAV output: {}", e);
+                            return Err(ApplicationError::WavAudioOutputError);
+                        }
+                    }
                 }
                 Ok(AudioMessage::Samples(samples)) => {
                     debug!("Received {} samples", samples.len());
                     if let Some(output) = output.as_mut() {
-                        output
-                            .write_samples(&samples)
-                            .expect("Failed to write samples to WAV file");
+                        if let Err(error) = output.write_samples(&samples) {
+                            error!("Failed to write samples to WAV file: {}", error);
+                            return Err(ApplicationError::WavAudioOutputError);
+                        }
                     }
                 }
                 Err(e) => {
@@ -83,7 +92,7 @@ impl Application {
             }
         }
     }
-    fn play_audio(&mut self, speaker: Option<String>) -> Result<(), TcpClientError> {
+    fn play_audio(&mut self, speaker: Option<String>) -> Result<(), ApplicationError> {
         let mut buffer = Vec::new();
         let mut speaker_output: Option<SpeakerOutput> = None;
         sleep(Duration::from_secs(1));
@@ -179,7 +188,10 @@ fn main() {
     };
     if cli.default_speaker || cli.speaker.is_some() {
         let speaker_name = cli.speaker.map(|s| s.name);
-        app.play_audio(speaker_name).expect("Failed to play audio");
+        if let Err(error) = app.play_audio(speaker_name) {
+            error!("Error during audio playback: {:?}", error);
+            return;
+        }
     } else if let Some(WavFile { path }) = cli.file {
         let file = match path.to_str() {
             Some(f) => f,
@@ -189,7 +201,9 @@ fn main() {
             }
         };
 
-        app.write_audio_to_file(file)
-            .expect("Failed to write audio to file");
+        if let Err(error) = app.write_audio_to_file(file) {
+            error!("Error writing audio to file: {:?}", error);
+            return;
+        }
     }
 }
