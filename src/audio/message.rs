@@ -1,4 +1,4 @@
-use crate::audio::DeserializationError::UnknownWaveSpecSampleFormat;
+use crate::audio::DeserializationError::{DataLengthMismatch, UnknownWaveSpecSampleFormat};
 use crate::audio::message::LengthError::TooLong;
 use hound::{SampleFormat, WavSpec};
 
@@ -7,7 +7,7 @@ pub enum LengthError {
     TooLong { len: usize },
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum DeserializationError {
     IncorrectAudioMessageType {
         kind: u8,
@@ -77,16 +77,6 @@ impl Serializable for AudioMessage {
                 let len = (samples.len() as u32).to_le_bytes();
                 buf.extend_from_slice(&len);
                 buf.extend(samples.iter().flat_map(|s| s.to_le_bytes()));
-
-                // Implementation choice: using slice to copy the data via a memory copy instead of iterating through
-                // the elements one by one
-
-                // Implementation choice: we're converting the samples into a vec of u8 using a flat map, this does
-                // use CPU, we could do something unsafe (in the rust sense of the word) and
-                // reinterpret the vec as a vec of u8 using either from_raw_parts, but that would
-                // make the samples u8 bytes <<<<<<endian>>>>>>ness be that of the host machine's endianness,
-                // since this program may run on different machines(MacOS and/or Linux), this is
-                // not a hypothesis we can afford to make.
             }
         }
         Ok(())
@@ -94,7 +84,7 @@ impl Serializable for AudioMessage {
 
     fn deserialize(bytes: &[u8]) -> Result<Self, DeserializationError> {
         if bytes.is_empty() {
-            return Err(DeserializationError::DataLengthMismatch {
+            return Err(DataLengthMismatch {
                 current_length: 0,
                 expected_length: 1,
             });
@@ -102,18 +92,28 @@ impl Serializable for AudioMessage {
         let msg_type = AudioMessageType::try_from(bytes[0]);
         match msg_type {
             Ok(AudioMessageType::Spec) => {
+                let data_length_mismatch_error = DataLengthMismatch {
+                    current_length: bytes.len(),
+                    expected_length: SPEC_MSG_LEN,
+                };
                 if bytes.len() != SPEC_MSG_LEN {
-                    return Err(DeserializationError::DataLengthMismatch {
-                        current_length: bytes.len(),
-                        expected_length: SPEC_MSG_LEN,
-                    });
+                    return Err(data_length_mismatch_error);
                 }
-                let channels =
-                    u16::from_le_bytes(bytes[1..3].try_into().expect("length checked above"));
-                let sample_rate =
-                    u32::from_le_bytes(bytes[3..7].try_into().expect("length checked above"));
-                let bits_per_sample =
-                    u16::from_le_bytes(bytes[7..9].try_into().expect("length checked above"));
+                let channels = u16::from_le_bytes(
+                    bytes[1..3]
+                        .try_into()
+                        .map_err(|_| data_length_mismatch_error)?,
+                );
+                let sample_rate = u32::from_le_bytes(
+                    bytes[3..7]
+                        .try_into()
+                        .map_err(|_| data_length_mismatch_error)?,
+                );
+                let bits_per_sample = u16::from_le_bytes(
+                    bytes[7..9]
+                        .try_into()
+                        .map_err(|_| data_length_mismatch_error)?,
+                );
                 let sample_format = match bytes[9] {
                     1 => SampleFormat::Float,
                     2 => SampleFormat::Int,
@@ -128,17 +128,21 @@ impl Serializable for AudioMessage {
                 }))
             }
             Ok(AudioMessageType::Samples) => {
+                let data_length_mismatch_error = DataLengthMismatch {
+                    current_length: bytes.len(),
+                    expected_length: 5,
+                };
                 if bytes.len() < SAMPLES_HEADER_LEN {
-                    return Err(DeserializationError::DataLengthMismatch {
-                        current_length: bytes.len(),
-                        expected_length: 5,
-                    });
+                    return Err(data_length_mismatch_error);
                 }
-                let length =
-                    u32::from_le_bytes(bytes[1..5].try_into().expect("length checked above"));
+                let length = u32::from_le_bytes(
+                    bytes[1..5]
+                        .try_into()
+                        .map_err(|_| data_length_mismatch_error)?,
+                );
                 let expected_length = SAMPLES_HEADER_LEN + (length as usize) * SAMPLE_SIZE;
                 if bytes.len() != expected_length {
-                    return Err(DeserializationError::DataLengthMismatch {
+                    return Err(DataLengthMismatch {
                         current_length: bytes.len(),
                         expected_length,
                     });
