@@ -102,24 +102,31 @@ impl Application {
 }
 
 fn main() {
-    const FILEPATH: &str = "data/song.wav";
-    env_logger::builder().filter_level(LevelFilter::Warn).init();
+    env_logger::builder().filter_level(LevelFilter::Info).init();
+    let cli = ServerCli::parse();
+    let port = cli.port;
+    let ip = "0.0.0.0";
+    let address = format!("{ip}:{port}");
+    println!("Starting server at {address}");
 
-    let tcp = match TcpServer::bind("localhost:8080") {
+    let tcp = match TcpServer::bind(&address) {
         Ok(t) => t,
         Err(_) => {
-            error!("Couldn't connect to server at localhost:8080");
+            error!("Couldn't connect to server at {address}");
             return;
         }
     };
 
     let mut app = Application { tcp };
-    match app.play_wav_file(FILEPATH) {
+    let filepath = match cli.wav.path.to_str() {
+        Some(f) => f,
+        None => {
+            error!("Unexpected error: Invalid file path");
+            return;
+        }
+    };
+    match app.play_wav_file(filepath) {
         Ok(_) => info!("Finished playing WAV file"),
         Err(e) => error!("{:?}", e),
-    }
-
-    loop {
-        sleep(Duration::from_secs(60))
     }
 }

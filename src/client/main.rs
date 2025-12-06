@@ -93,7 +93,9 @@ impl Application {
                 Ok(AudioMessage::Spec(spec)) => {
                     debug!("Received audio spec: {:?}", spec);
                     let mut speaker_builder = SpeakerOutputBuilder::new();
-
+                    if let Some(device_name) = &speaker {
+                        speaker_builder.with_output_device(device_name);
+                    }
                     match speaker_builder.build() {
                         Ok(so) => speaker_output = Some(so),
                         Err(e) => {
@@ -113,16 +115,35 @@ impl Application {
             }
         }
     }
+    fn list_available_speakers() {
+        let speakers = SpeakerOutputBuilder::new().list_output_devices();
+        println!("Available speaker devices:");
+        for speaker in speakers {
+            println!(" - {}", speaker);
+        }
+    }
 }
 
 fn main() {
-    env_logger::builder().filter_level(LevelFilter::Warn).init();
-    const FILEPATH: &str = "output.wav";
-    let mut tcp: Result<TcpClient>;
+    env_logger::builder().filter_level(LevelFilter::Info).init();
+    let cli = ClientCli::parse();
+    match cli.command {
+        Some(cli::ClientCliSubCommand::ListAvailableSpeakers) => {
+            Application::list_available_speakers();
+            return;
+        }
+        None => {}
+    }
+
+    let address = format!("{}:{}", cli.ip.unwrap(), cli.port.unwrap());
+    let mut tcp: io::Result<TcpClient>;
     loop {
-        tcp = TcpClient::connect("localhost:8080");
+        tcp = TcpClient::connect(&address);
         if tcp.is_err() {
-            info!("Couldn't connect to server at localhost:8080");
+            info!(
+                "Couldn't connect to server at {}. Retrying after 1 second...",
+                address
+            );
             sleep(Duration::from_secs(1));
             continue;
         }
@@ -143,7 +164,19 @@ fn main() {
         tcp_client: tcp,
         stop,
     };
-    // app.write_audio_to_file(FILEPATH)
-    //     .expect("Failed to write audio to file");
-    app.play_audio().expect("Failed to play audio");
+    if cli.default_speaker || cli.speaker.is_some() {
+        let speaker_name = cli.speaker.map(|s| s.name);
+        app.play_audio(speaker_name).expect("Failed to play audio");
+    } else if let Some(WavFile { path }) = cli.file {
+        let file = match path.to_str() {
+            Some(f) => f,
+            None => {
+                error!("Unexpected error: Invalid file path");
+                return;
+            }
+        };
+
+        app.write_audio_to_file(file)
+            .expect("Failed to write audio to file");
+    }
 }
