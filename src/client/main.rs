@@ -1,9 +1,13 @@
+use clap::Parser;
 use log::{LevelFilter, debug, error, info};
 use sonos_challenge::audio::{
     AudioMessage, Serializable, SpeakerOutput, SpeakerOutputBuilder, WavAudioOutput,
 };
+use sonos_challenge::cli;
+use sonos_challenge::cli::{ClientCli, WavFile};
+use sonos_challenge::network::TcpClientError;
 use sonos_challenge::network::tcp::TcpClient;
-use std::io::Result;
+use std::io;
 use std::sync::Arc;
 use std::sync::atomic::Ordering::SeqCst;
 use std::thread::sleep;
@@ -14,8 +18,25 @@ struct Application {
     stop: Arc<std::sync::atomic::AtomicBool>,
 }
 
+enum ReceiveOutcome {
+    Data,
+    ServerDisconnected,
+}
 impl Application {
-    fn write_audio_to_file(&mut self, filename: &str) -> Result<()> {
+    fn receive(&mut self, buffer: &mut Vec<u8>) -> Result<ReceiveOutcome, TcpClientError> {
+        match self.tcp_client.receive(buffer) {
+            Ok(_) => Ok(ReceiveOutcome::Data),
+            Err(TcpClientError::ServerDisconnected(_)) => {
+                info!("Server disconnected");
+                Ok(ReceiveOutcome::ServerDisconnected)
+            }
+            Err(error) => {
+                error!("Error receiving data from server: {:?}", error);
+                Err(error)
+            }
+        }
+    }
+    fn write_audio_to_file(&mut self, filename: &str) -> Result<(), TcpClientError> {
         let mut buffer = Vec::new();
         let mut output: Option<WavAudioOutput> = None;
         // sleep(Duration::from_secs(1));
@@ -31,13 +52,9 @@ impl Application {
                 info!("Stopping client");
                 return Ok(());
             }
-            match self.tcp_client.receive(&mut buffer) {
-                Ok(_) => (),
-                Err(e) => {
-                    error!("Error receiving data from server: {}", e);
-                    return Ok(());
-                }
-            };
+            if let ReceiveOutcome::ServerDisconnected = self.receive(&mut buffer)? {
+                return Ok(());
+            }
             let audio_message = AudioMessage::deserialize(&buffer);
             match audio_message {
                 Ok(AudioMessage::Spec(spec)) => {
@@ -66,7 +83,7 @@ impl Application {
             }
         }
     }
-    fn play_audio(&mut self) -> Result<()> {
+    fn play_audio(&mut self, speaker: Option<String>) -> Result<(), TcpClientError> {
         let mut buffer = Vec::new();
         let mut speaker_output: Option<SpeakerOutput> = None;
         sleep(Duration::from_secs(1));
@@ -81,13 +98,9 @@ impl Application {
                 info!("Stopping client");
                 return Ok(());
             }
-            match self.tcp_client.receive(&mut buffer) {
-                Ok(_) => (),
-                Err(e) => {
-                    error!("Error receiving data from server: {}", e);
-                    return Ok(());
-                }
-            };
+            if let ReceiveOutcome::ServerDisconnected = self.receive(&mut buffer)? {
+                return Ok(());
+            }
             let audio_message = AudioMessage::deserialize(&buffer);
             match audio_message {
                 Ok(AudioMessage::Spec(spec)) => {

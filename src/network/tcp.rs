@@ -172,31 +172,52 @@ pub struct TcpClient {
     stream: TcpStream,
 }
 
+#[derive(Debug)]
+pub enum TcpClientError {
+    ServerDisconnected(io::Error),
+    FrameTooLarge { length: usize, max: usize },
+    Io(io::Error),
+}
+
 impl TcpClient {
     pub fn connect(address: &str) -> io::Result<Self> {
         let stream = TcpStream::connect(address)?;
         Ok(TcpClient { stream })
     }
+    fn map_read_error(e: io::Error, context: &'static str) -> TcpClientError {
+        if matches!(
+            e.kind(),
+            io::ErrorKind::UnexpectedEof
+                | io::ErrorKind::ConnectionReset
+                | io::ErrorKind::ConnectionAborted
+                | io::ErrorKind::BrokenPipe
+        ) {
+            debug!("Server closed connection while {}: {}", context, e);
+            TcpClientError::ServerDisconnected(e)
+        } else {
+            error!("I/O error while {}: {}", context, e);
+            TcpClientError::Io(e)
+        }
+    }
 
     const MAX_FRAME_SIZE: usize = 16 * 1024 * 1024; // 16 MB
-    pub fn receive(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
+    pub fn receive(&mut self, buf: &mut Vec<u8>) -> Result<usize, TcpClientError> {
         let mut length_bytes = [0u8; 4];
-        self.stream.read_exact(&mut length_bytes)?;
+        self.stream
+            .read_exact(&mut length_bytes)
+            .map_err(|e| Self::map_read_error(e, "reading frame length"))?;
         debug!("Length bytes: {:02X?}", length_bytes);
         let length = u32::from_le_bytes(length_bytes) as usize;
-        debug!("Expecting to receive {} bytes from server", length);
         if length > Self::MAX_FRAME_SIZE {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "Frame size {} exceeds maximum {}",
-                    length,
-                    Self::MAX_FRAME_SIZE
-                ),
-            ));
+            return Err(TcpClientError::FrameTooLarge {
+                length,
+                max: Self::MAX_FRAME_SIZE,
+            });
         }
         buf.resize(length, 0);
-        self.stream.read_exact(buf)?;
+        self.stream
+            .read_exact(buf)
+            .map_err(|e| Self::map_read_error(e, "reading frame body"))?;
         debug!("Received {} bytes from server", length);
         Ok(length)
     }
