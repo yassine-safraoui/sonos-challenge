@@ -1,5 +1,7 @@
+use clap::Parser;
 use log::{LevelFilter, error, info};
 use sonos_challenge::audio::{AudioInput, AudioMessage, Serializable, WavAudioInput};
+use sonos_challenge::cli::ServerCli;
 use sonos_challenge::network::tcp::TcpServer;
 use std::thread::sleep;
 use std::time::Duration;
@@ -60,22 +62,12 @@ impl Application {
                         sample_group.push(s);
                         continue;
                     }
-                    if let Err(error) = AudioMessage::Samples(sample_group.clone())
-                        .serialize(&mut serialization_buffer)
-                    {
-                        error!("Couldn't serialize sample: {:?}", error);
-                        return Err(AppError::Serialization);
-                    }
-                    if let Err(error) = self.tcp.broadcast(&serialization_buffer) {
-                        error!("Couldn't send sample to clients: {}", error);
-                        return Err(AppError::Broadcast);
-                    }
+                    self.play_samples_group(&sample_group)?;
                     sent_samples += sample_group.len();
                     sample_group.clear();
                     if sent_samples > spec.sample_rate as usize * 3 {
                         sleep(Duration::from_micros(wait_time as u64));
                     }
-                    serialization_buffer.clear();
                 }
                 Err(e) => {
                     error!("Error reading sample: {}", e);
@@ -84,20 +76,27 @@ impl Application {
             }
         }
         if !sample_group.is_empty() {
-            if AudioMessage::Samples(sample_group.clone())
-                .serialize(&mut serialization_buffer)
-                .is_err()
-            {
-                error!("Couldn't serialize final samples");
-                return Err(AppError::Serialization);
-            }
-            if self.tcp.broadcast(&serialization_buffer).is_err() {
-                error!("Couldn't send final samples to client");
-                return Err(AppError::Broadcast);
-            }
-            serialization_buffer.clear();
+            self.play_samples_group(&sample_group)?;
         }
         Ok(())
+    }
+
+    fn play_samples_group(&mut self, samples: &[i16]) -> Result<(), AppError> {
+        let mut serialization_buffer = Vec::new();
+        match AudioMessage::Samples(samples.to_vec()).serialize(&mut serialization_buffer) {
+            Ok(_) => (),
+            Err(_) => {
+                error!("Couldn't serialize samples");
+                return Err(AppError::Serialization);
+            }
+        };
+        match self.tcp.broadcast(&serialization_buffer) {
+            Ok(_) => Ok(()),
+            Err(_) => {
+                error!("Couldn't send samples to clients");
+                Err(AppError::Broadcast)
+            }
+        }
     }
 }
 
@@ -116,7 +115,6 @@ fn main() {
             return;
         }
     };
-
     let mut app = Application { tcp };
     let filepath = match cli.wav.path.to_str() {
         Some(f) => f,
