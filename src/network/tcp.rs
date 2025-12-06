@@ -142,7 +142,6 @@ impl TcpServer {
         let clients: Vec<TcpStream> = streams.drain(..).collect();
         drop(streams);
         let mut surviving_streams = Vec::with_capacity(clients.len());
-
         for mut stream in clients {
             if !Self::send_frame(&mut stream, data, "broadcasting data") {
                 continue;
@@ -257,9 +256,7 @@ mod tests {
 
         // Test broadcasting data
         let data = vec![1, 2, 3, 4, 5];
-        server
-            .broadcast(&data)
-            .expect("Failed to broadcast data");
+        server.broadcast(&data).expect("Failed to broadcast data");
         let mut buffer: Vec<u8> = Vec::new();
         let received_bytes_count = client.receive(&mut buffer).expect("Failed to receive data");
         assert_eq!(received_bytes_count, data.len());
