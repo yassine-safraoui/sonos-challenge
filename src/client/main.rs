@@ -95,7 +95,6 @@ impl Application {
     fn play_audio(&mut self, speaker: Option<String>) -> Result<(), ApplicationError> {
         let mut buffer = Vec::new();
         let mut speaker_output: Option<SpeakerOutput> = None;
-        sleep(Duration::from_secs(1));
         loop {
             buffer.clear();
             if self.stop.load(SeqCst) {
