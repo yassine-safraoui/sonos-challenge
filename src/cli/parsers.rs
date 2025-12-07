@@ -1,5 +1,4 @@
 use crate::audio::SpeakerOutputBuilder;
-use log::info;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
@@ -15,13 +14,6 @@ impl FromStr for WavFile {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let path = PathBuf::from(s);
-
-        if path.exists() {
-            info!(
-                "WAV file '{}' already exists and will be overwritten",
-                path.display()
-            );
-        }
 
         match path.parent() {
             Some(parent) if parent.as_os_str().is_empty() => {}
