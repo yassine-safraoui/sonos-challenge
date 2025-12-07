@@ -232,21 +232,11 @@ impl TcpClient {
 
 #[cfg(test)]
 mod tests {
-    use log::LevelFilter;
-    use std::sync::Once;
     use std::thread::sleep;
     use std::time::Duration;
-    static INIT: Once = Once::new();
-    fn initialize_logger() {
-        INIT.call_once(|| {
-            env_logger::builder()
-                .filter_level(LevelFilter::Trace)
-                .init()
-        });
-    }
+
     #[test]
     fn broadcast_test() {
-        initialize_logger();
         let address = "localhost:50104";
         let mut server = super::TcpServer::bind(address).expect("Failed to start TCP server");
         let mut client =
@@ -264,8 +254,7 @@ mod tests {
     }
     #[test]
     fn new_client_message_test() {
-        initialize_logger();
-        let address = "localhost:50104";
+        let address = "localhost:50105";
         let mut server = super::TcpServer::bind(address).expect("Failed to start TCP server");
         let new_client_message = vec![10, 20, 30, 40, 50];
         server.set_new_client_message(&new_client_message);
