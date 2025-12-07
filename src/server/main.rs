@@ -87,6 +87,10 @@ impl Application {
         if !sample_group.is_empty() {
             self.play_samples_group(&sample_group)?;
         }
+        while self.tcp.get_client_count() > 0 {
+            info!("Waiting for clients to finish playback...");
+            sleep(Duration::from_secs(1));
+        }
         Ok(())
     }
 
