@@ -1,6 +1,6 @@
 use clap::Parser;
 use log::{LevelFilter, error, info};
-use sonos_challenge::audio::{AudioInput, AudioMessage, Serializable, WavAudioInput};
+use sonos_challenge::audio::{AudioMessage, Serializable, WavAudioInput};
 use sonos_challenge::cli::ServerCli;
 use sonos_challenge::network::tcp::TcpServer;
 use std::thread::sleep;
