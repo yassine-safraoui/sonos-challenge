@@ -103,7 +103,7 @@ This document contains potential interview questions based on the audio streamin
 26. **What happens if network jitter causes packets to arrive late at the client?**
     - How does your ring buffer help (or not help) with this?
 
-27. **In `SpeakerOutput::play_samples`, you have a busy-wait loop: `while self.producer.vacant_len() < samples.len() {}`. Why?**
+27. **In `SpeakerOutput::play_samples`, you have a busy-wait loop: `while self.producer.vacant_len() < samples.len() { /* busy wait */ }`. Why?**
     - What are the implications of this approach?
     - Could this cause issues? If so, what would be a better solution?
 
@@ -185,7 +185,7 @@ This document contains potential interview questions based on the audio streamin
 49. **Looking at `WavAudioOutput::finalize`, it consumes `self`. Why this design?**
     - What does this prevent?
 
-50. **You use `if let` chains with `&&` (e.g., `if let Some(output) = speaker_output && let Err(e) = output.pause()`). What Rust edition feature is this?**
+50. **You use `if let` chains with `&&` (e.g., `if let Some(output) = speaker_output && let Err(e) = output.pause() { ... }`). What Rust edition feature is this?**
 
 ---
 
@@ -307,7 +307,7 @@ These questions are designed to:
 - **Test communication**: Can they explain complex technical concepts clearly
 
 **Recommended approach:**
-1. Start with high-level architecture questions (1-7)
+1. Start with high-level architecture and design questions (Section 1)
 2. Dive deep into 2-3 areas based on candidate's strengths/interests
 3. Include at least a few "future improvements" questions to see how they think about evolution
 4. End with reflection/meta-questions about their process
