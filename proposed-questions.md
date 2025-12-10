@@ -186,6 +186,8 @@ This document contains potential interview questions based on the audio streamin
     - What does this prevent?
 
 50. **You use `if let` chains with `&&` (e.g., `if let Some(output) = speaker_output && let Err(e) = output.pause() { ... }`). What Rust edition feature is this?**
+    - When was this feature stabilized?
+    - What problem does it solve compared to nested `if let` statements?
 
 ---
 
